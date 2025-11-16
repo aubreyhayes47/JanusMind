@@ -41,7 +41,7 @@ class HoldemHand:
             p.reset_for_new_hand()
 
     def living_players(self):
-        return [p for p in self.players if not p.has_folded and p.stack > 0]
+        return [p for p in self.players if not p.has_folded]
 
     # ----------------------------------------------------------------------
     # Dealing
@@ -105,7 +105,7 @@ class HoldemHand:
         num_players = len(self.players)
         acted = [False] * num_players
 
-        idx = starting_player_index
+        idx = starting_player_index % num_players
 
         while not all(acted):
             player = self.players[idx]
@@ -160,23 +160,27 @@ class HoldemHand:
     # ----------------------------------------------------------------------
 
     def build_side_pots(self):
-        contribs = {p: p.total_contributed for p in self.players}
-        caps = sorted(set(contribs.values()))
+        contribs = [p.total_contributed for p in self.players]
+        caps = sorted(set(contribs))
 
         self.side_pots = []
         prev = 0
 
         for cap in caps:
             slice_amt = cap - prev
+            if slice_amt <= 0:
+                continue
+
             pot_size = 0
             eligible = []
 
-            for p in self.players:
-                if contribs[p] >= cap:
+            for player, contrib in zip(self.players, contribs):
+                if contrib >= cap:
                     pot_size += slice_amt
-                    eligible.append(p)
+                    eligible.append(player)
 
-            self.side_pots.append((pot_size, eligible))
+            if pot_size:
+                self.side_pots.append((pot_size, eligible))
             prev = cap
 
     # ----------------------------------------------------------------------
@@ -189,6 +193,12 @@ class HoldemHand:
         for pot_amount, eligible in self.side_pots:
             contenders = [p for p in eligible if not p.has_folded]
             if not contenders:
+                continue
+
+            if len(contenders) == 1 or len(self.board) < 5:
+                winner = contenders[0]
+                winner.stack += pot_amount
+                results.append((pot_amount, [winner]))
                 continue
 
             scores = [(evaluate_hand(p.hole_cards, self.board), p) for p in contenders]
