@@ -10,9 +10,10 @@ import sys
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, Iterator, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from hand import HoldemHand, PlayerState
+from simulation.seating import SeatManager
 
 _SELF_PLAY_LOGGER_PATH = Path(__file__).resolve().parent.parent / "logging" / "self_play_logger.py"
 _SELF_PLAY_LOGGER_SPEC = importlib.util.spec_from_file_location(
@@ -94,6 +95,8 @@ class HandTask:
     hand_number: int
     table_index: int
     table_config: TableConfig
+    players: List[PlayerState]
+    agent_paths: List[str]
     seed: Optional[int]
     action_log_mode: Optional[str]
     action_log_path: Optional[Path]
@@ -150,10 +153,15 @@ def _run_single_hand(task: HandTask) -> Dict:
     if task.seed is not None:
         random.seed(task.seed)
 
-    players = [
-        PlayerState(seat=i, stack=stack) for i, stack in enumerate(task.table_config.stacks)
-    ]
-    agents = [_load_agent(spec) for spec in task.table_config.agents]
+    players = [PlayerState(
+        seat=p.seat,
+        stack=p.stack,
+        hole_cards=list(p.hole_cards),
+        current_bet=p.current_bet,
+        total_contributed=p.total_contributed,
+        has_folded=p.has_folded,
+    ) for p in task.players]
+    agents = [_load_agent(spec) for spec in task.agent_paths]
 
     hand = HoldemHand(players)
     logger: Optional[SelfPlayLogger] = None
@@ -209,33 +217,53 @@ class SimulationRunner:
         self.config = config
         self.publisher = HandEventPublisher()
         self.stats = SimulationStats()
+        self._seat_managers = [
+            SeatManager(table.stacks, table.agents) for table in self.config.tables
+        ]
 
     def subscribe(self, callback: Callable[[Dict], None]) -> None:
         self.publisher.subscribe(callback)
 
-    def _task_iterator(self) -> Iterator[HandTask]:
+    def _tasks_for_hand(self, hand_number: int) -> List[HandTask]:
         total_tables = len(self.config.tables)
-        for hand_number in range(self.config.num_hands):
-            for table_index, table in enumerate(self.config.tables):
-                if self.config.seed is not None:
-                    seed = self.config.seed + hand_number * total_tables + table_index
-                else:
-                    seed = None
-                task_id = hand_number * total_tables + table_index
-                yield HandTask(
+        tasks: List[HandTask] = []
+        for table_index, (table, manager) in enumerate(
+            zip(self.config.tables, self._seat_managers)
+        ):
+            assignment = manager.next_hand()
+            if self.config.seed is not None:
+                seed = self.config.seed + hand_number * total_tables + table_index
+            else:
+                seed = None
+            task_id = hand_number * total_tables + table_index
+            tasks.append(
+                HandTask(
                     task_id=task_id,
                     hand_number=hand_number,
                     table_index=table_index,
                     table_config=table,
+                    players=assignment.players,
+                    agent_paths=assignment.agent_paths,
                     seed=seed,
                     action_log_mode=self.config.action_log_mode,
                     action_log_path=self.config.action_log_path,
                 )
+            )
+        return tasks
 
     def _handle_summary(self, summary: Dict) -> None:
         self.stats.update_from_summary(summary)
         self.publisher.publish(summary)
+        self._update_seating(summary)
         self._maybe_checkpoint()
+
+    def _update_seating(self, summary: Dict) -> None:
+        result = summary.get("result") or {}
+        players = result.get("players")
+        if not players:
+            return
+        manager = self._seat_managers[summary["table_index"]]
+        manager.complete_hand(players)
 
     def _maybe_checkpoint(self) -> None:
         if not self.config.checkpoint_interval:
@@ -250,15 +278,18 @@ class SimulationRunner:
         checkpoint_path.write_text(json.dumps(data, indent=2))
 
     def run(self) -> SimulationStats:
-        tasks = self._task_iterator()
         if self.config.concurrency > 1:
             with ProcessPoolExecutor(max_workers=self.config.concurrency) as pool:
-                for summary in pool.map(_run_single_hand, tasks):
-                    self._handle_summary(summary)
+                for hand_number in range(self.config.num_hands):
+                    tasks = self._tasks_for_hand(hand_number)
+                    for summary in pool.map(_run_single_hand, tasks):
+                        self._handle_summary(summary)
         else:
-            for task in tasks:
-                summary = _run_single_hand(task)
-                self._handle_summary(summary)
+            for hand_number in range(self.config.num_hands):
+                tasks = self._tasks_for_hand(hand_number)
+                for task in tasks:
+                    summary = _run_single_hand(task)
+                    self._handle_summary(summary)
 
         return self.stats
 
