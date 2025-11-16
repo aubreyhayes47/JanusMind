@@ -5,6 +5,7 @@ from collections import defaultdict, deque
 from dataclasses import dataclass
 from typing import Deque, Dict, Iterable, Tuple
 
+from payouts import split_pot_evenly
 
 @dataclass
 class _PlayerSnapshot:
@@ -108,9 +109,9 @@ class EVMetricsAccumulator:
         for pot_amount, winners in result.get("result", []):
             if not winners:
                 continue
-            share = pot_amount // len(winners)
+            payouts = split_pot_evenly(pot_amount, [winner.seat for winner in winners])
             for winner in winners:
-                winnings[winner.seat] += share
+                winnings[winner.seat] += payouts[winner.seat]
         return {seat: winnings.get(seat, 0) - contrib for seat, contrib in contributions.items()}
 
     def as_dict(self) -> Dict:
