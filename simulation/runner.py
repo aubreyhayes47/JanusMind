@@ -183,7 +183,15 @@ def _run_single_hand(task: HandTask) -> Dict:
     if not total_pot:
         total_pot = sum(p.total_contributed for p in result.get("players", []))
 
-    winners = [p.seat for _, winners in result.get("result", []) for p in winners]
+    # ``result['result']`` is ordered such that the main pot is first followed by
+    # any side pots. We only want to count a "hand win" for the players who won
+    # the main pot so that the win counts sum to the number of hands (aside from
+    # true split pots). Side-pot winners should not be double-counted.
+    winners: List[int] = []
+    showdown_results = result.get("result", [])
+    if showdown_results:
+        _, main_winners = showdown_results[0]
+        winners = [p.seat for p in main_winners]
 
     return {
         "task_id": task.task_id,
