@@ -125,7 +125,12 @@ class SimulationStats:
     def update_from_summary(self, summary: Dict) -> None:
         self.hands_played += 1
         self.aggregate_pot += summary.get("total_pot", 0)
-        for seat in summary.get("winners", []):
+        # ``summary['winners']`` can contain duplicate seat numbers when the
+        # same player scoops multiple side pots. We only want to count a win
+        # once per hand so that win totals add up to the number of hands
+        # played (barring true split pots). Deduplicate the winners before
+        # tallying.
+        for seat in set(summary.get("winners", [])):
             self.win_counts[seat] = self.win_counts.get(seat, 0) + 1
 
     def as_dict(self) -> Dict:
