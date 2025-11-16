@@ -122,6 +122,7 @@ Example `config/small_batch.json`:
       "stacks": [200, 200],
       "sb": 1,
       "bb": 2,
+      "auto_reload": true,
       "agents": [
         "agents.tag_agent.TAGAgent",
         "agents.random_agent.RandomAgent"
@@ -132,6 +133,8 @@ Example `config/small_batch.json`:
 ```
 
 Run it with `python -m simulation.runner --config config/small_batch.json`. Override any field on the CLI (for example `--hands 100` or `--checkpoint-interval 25`). The harness returns aggregated stats (hands played, total pot, per-seat wins) and exposes a hook API so downstream loggers/metric collectors can subscribe to each completed hand.
+
+`auto_reload` lets you control whether stacks reset to their initial buy-ins after each hand (the default) or if chip counts should persist across hands for deeper bankroll tracking.
 
 ---
 

@@ -52,6 +52,7 @@ class TableConfig:
     agents: List[str]
     sb: int = 5
     bb: int = 10
+    auto_reload: bool = True
 
     @classmethod
     def from_dict(cls, data: Dict) -> "TableConfig":
@@ -60,6 +61,7 @@ class TableConfig:
             agents=data["agents"],
             sb=data.get("sb", 5),
             bb=data.get("bb", 10),
+            auto_reload=data.get("auto_reload", True),
         )
 
 
@@ -85,6 +87,7 @@ class SimulationConfig:
                     ],
                     sb=5,
                     bb=10,
+                    auto_reload=True,
                 )
             )
 
