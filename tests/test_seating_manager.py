@@ -12,7 +12,7 @@ from simulation.seating import SeatManager
 
 def test_seat_manager_rotates_and_preserves_stacks() -> None:
     stacks = [100, 120, 140, 160]
-    manager = SeatManager(stacks, ["a", "b", "c", "d"])
+    manager = SeatManager(stacks, ["a", "b", "c", "d"], auto_reload=False)
     initial = {player.seat: player.stack for player in manager.player_states}
     deltas = {seat: 0 for seat in range(len(stacks))}
     orders = []
@@ -52,3 +52,17 @@ def test_headsup_button_follows_small_blind() -> None:
         )
 
     assert sb_sequence == [0, 1, 0, 1, 0, 1, 0, 1, 0, 1]
+
+
+def test_auto_reload_restores_initial_stacks() -> None:
+    stacks = [75, 150, 225]
+    manager = SeatManager(stacks, ["a", "b", "c"], auto_reload=True)
+
+    assignment = manager.next_hand()
+    depleted = [
+        PlayerState(seat=player.seat, stack=1) for player in assignment.players
+    ]
+    manager.complete_hand(depleted)
+
+    reloaded = manager.player_states
+    assert [player.stack for player in reloaded] == stacks
