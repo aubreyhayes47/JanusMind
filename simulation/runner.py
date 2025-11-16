@@ -221,12 +221,7 @@ class SimulationRunner:
         self.publisher = HandEventPublisher()
         self.stats = SimulationStats()
         self._seat_managers = [
-            SeatManager(
-                table.stacks,
-                table.agents,
-                auto_reload=table.auto_reload,
-            )
-            for table in self.config.tables
+            SeatManager(table.stacks, table.agents) for table in self.config.tables
         ]
 
     def subscribe(self, callback: Callable[[Dict], None]) -> None:
