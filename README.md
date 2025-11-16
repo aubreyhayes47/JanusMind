@@ -1,42 +1,68 @@
-# **JanusMind — Poker Simulation & AI Research Engine**
+# JanusMind — Poker Simulation & AI Research Engine
 
-JanusMind is a modular Texas Hold’em simulation environment built for experimentation with game-theoretic algorithms, range inference, and self-play reinforcement learning. The system starts with a clear, fully transparent hand engine and rule-based agents, and is engineered to scale toward multi-player (2–9 seat) poker AI research.
-
-The project emphasizes clarity, extensibility, and full control over every part of the game flow — ideal for both experimentation and long-term development.
+JanusMind is a modular Texas Hold'em environment for experimenting with hand engines, seat management, self-play agents, and largescale evaluation. The code base favors readability and deterministic flows so you can plug in new agent strategies, collect action logs, or run millions of hands without opaque side effects.
 
 ---
 
-# 🗂 **Project Structure**
+## 🔍 Highlights
 
-| Path                | Description                                                                                       |
-| ------------------- | ------------------------------------------------------------------------------------------------- |
-| `deck.py`           | Card and deck utilities (shuffle, deal).                                                          |
-| `actions.py`        | Enumerations for legal poker actions (fold, check, call, bet, raise).                             |
-| `player.py`         | `PlayerState` dataclass tracking stack, bets, status flags, and participation.                    |
-| `betting.py`        | Optional standalone betting engine for individual streets.                                        |
-| `hand.py`           | Full single-hand orchestration: blinds → betting rounds → community cards → side pots → showdown. |
-| `hand_evaluator.py` | Wrapper around [Treys](https://pypi.org/project/treys/) for fast hand evaluation.                 |
-| `agents/`           | Simple rule-based agents (always-call, always-fold, random, TAG, LAG).                            |
-| `scratch.py`        | Simple script for testing deck logic.                                                             |
+- **Full hand pipeline**: deck management, blinds, four betting streets, side pots, and Treys-backed showdowns (`hand.py`).
+- **Rule-based agents** that expose a single `act()` method and can be loaded dynamically via dotted paths (`agents/`).
+- **Seat + stack orchestration** with optional auto-reload, button rotation, and blind assignment (`simulation/seating.py`).
+- **High-volume runner** capable of batching multi-table simulations with concurrency, checkpoints, and structured hooks (`simulation/runner.py`).
+- **Action logging** to stdout/JSONL/Parquet plus EV + bb/100 tracking (`logging/self_play_logger.py`, `metrics/ev.py`).
+- **Test scaffolding** for deck sanity checks, CLI smoke runs, and pytest-based unit tests.
 
 ---
 
-# 🔧 **Requirements**
+## 🗂 Project Structure
 
-* Python 3.10+
-* [`treys`](https://pypi.org/project/treys/)
+| Path                     | Description                                                                                                  |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `deck.py`                | Card and deck utilities (shuffle, deal, burn).                                                               |
+| `hand.py`                | Single-hand orchestration: blinds → betting rounds → community cards → side pots → showdown.                |
+| `hand_evaluator.py`      | Wrapper around [Treys](https://pypi.org/project/treys/) for fast hand scoring.                               |
+| `player.py` / `actions.py` | Player state helpers and action enumerations shared by agents and betting logic.                          |
+| `payouts.py`             | Pot splitting utilities used by the showdown + metrics layers.                                               |
+| `agents/`                | Baseline policies (`always_call`, `always_fold`, `random`, `TAG`, `LAG`).                                     |
+| `simulation/`            | Multi-table runner, CLI entry point, and seating manager.                                                    |
+| `logging/self_play_logger.py` | Append-only action log backends (stdout, JSONL, Parquet).                                               |
+| `metrics/ev.py`          | EV + bb/100 aggregators fed from simulation summaries.                                                       |
+| `tests/`                 | Pytest suite that covers deck operations, payouts, and seating behavior.                                     |
+| `scratch.py`             | Quick manual sanity check for the deck module.                                                               |
 
-Install dependencies:
+---
+
+## 🎮 Built-in Agents
+
+Each agent implements `act(**state)` with the same payload passed from `HoldemHand.run_betting_round`. Available baselines:
+
+| Module                                | Strategy summary                         |
+| ------------------------------------- | ---------------------------------------- |
+| `agents.always_fold.AlwaysFoldAgent`  | Immediately folds every decision.        |
+| `agents.always_call.AlwaysCallAgent`  | Calls any bet until stack is exhausted.  |
+| `agents.random_agent.RandomAgent`     | Chooses uniformly among legal actions.   |
+| `agents.tag_agent.TAGAgent`           | Tight-aggressive heuristic betting.      |
+| `agents.lag_agent.LAGAgent`           | Loose-aggressive heuristic betting.      |
+
+When you add new agents, export them in `agents/__init__.py` so dotted-path imports keep working.
+
+---
+
+## ⚙️ Requirements & Installation
+
+- Python 3.10+
+- [`treys`](https://pypi.org/project/treys/) (required)
+- [`pyarrow`](https://pypi.org/project/pyarrow/) (optional, Parquet logging)
 
 ```bash
-pip install treys
+pip install treys           # base dependency
+pip install pyarrow         # optional, for --action-log-mode parquet
 ```
 
 ---
 
-# ▶️ **Running a Hand Simulation**
-
-Example:
+## 🧪 Single-Hand Sandbox
 
 ```python
 from agents.random_agent import RandomAgent
@@ -46,95 +72,55 @@ players = [
     PlayerState(seat=0, stack=100),
     PlayerState(seat=1, stack=100),
 ]
-
 agents = [RandomAgent(), RandomAgent()]
 
-game = HoldemHand(players)
-result = game.play_hand(agents)
-
-print("Board:", game.board_str())
-for i, p in enumerate(result["players"]):
-    print(f"Player {i} stack:", p.stack)
-print("Side pots:", result["side_pots"])
-print("Showdown:", result["result"])
+hand = HoldemHand(players)
+summary = hand.play_hand(agents, sb=5, bb=10)
+print("Board:", hand.board_str())
+print("Side pots:", summary["side_pots"])
+print("Showdown:", summary["result"])
 ```
 
-**Key Notes:**
-
-* `play_hand()` manages dealing, blinds, betting, community cards, and showdown.
-* Agents implement a single `act()` method that returns a dict describing their action.
-* Betting is simplified for early experimentation (single bet per street).
+`HoldemHand` handles blinds, one bet per street, community cards, side pots, and Treys-backed showdowns. Pass an optional `action_logger` (see below) to capture every decision.
 
 ---
 
-# 🧪 **Testing Utilities**
+## 🏎 Simulation Runner & CLI
 
-* `python scratch.py` — tests basic deck behavior.
-* `python -m simulation.runner --hands 25 --seed 7 --verbose` — run the new multi-hand harness and print EV metrics/stats.
-* Create new experiment scripts to test agent behavior, betting logic, or entire hand flows.
+`simulation.runner` batches hands across one or more tables. Tables carry initial stacks, blind sizes, and agent classes. The `SeatManager` enforces button/blind rotation and persists stacks with optional `auto_reload` rebuys.
 
-### Structured Action Logging
-
-Every betting decision can be streamed through the new `SelfPlayLogger`, enabling you to capture a complete record of all hands. The logger records timestamped entries with the acting seat, bet size, pot size, and board texture at the moment of the decision.
-
-There are three append-only backends:
-
-| Mode    | Description                                  | CLI usage example |
-| ------- | --------------------------------------------- | ----------------- |
-| `stdout` | Prints JSON to the console for quick debugging. | `--action-log-mode stdout` |
-| `jsonl` | Appends newline-delimited JSON to a file.        | `--action-log-mode jsonl --action-log-path logs/actions.jsonl` |
-| `parquet` | Streams Parquet rows (requires `pyarrow`).     | `--action-log-mode parquet --action-log-path logs/actions.parquet` |
-
-To log every simulated hand, pass the desired mode (and path for file-backed modes) when invoking the runner:
+### Basic CLI usage
 
 ```bash
-python -m simulation.runner --hands 1000 --action-log-mode jsonl --action-log-path logs/actions.jsonl
+python -m simulation.runner \
+  --hands 1000 \
+  --concurrency 4 \
+  --seed 1337 \
+  --action-log-mode jsonl \
+  --action-log-path logs/actions.jsonl \
+  --metrics-path logs/ev_metrics.json
 ```
 
-The same options are available via config files under the `action_log` key:
+Flags:
 
-```json
-{
-  "action_log": {
-    "mode": "jsonl",
-    "path": "logs/actions.jsonl"
-  }
-}
-```
+- `--config`: JSON file with simulation settings (see below).
+- `--hands`, `--concurrency`, `--seed`: override config defaults per run.
+- `--checkpoint-interval` + `--checkpoint-path`: persist stats snapshots every _N_ hands.
+- `--action-log-mode`/`--action-log-path`: stream betting decisions to stdout, JSONL, or Parquet.
+- `--metrics-path` + `--metrics-interval`: materialize EV/BB snapshots on disk or at fixed intervals.
+- `--verbose`: stream per-hand summaries to stdout.
 
-All agents automatically emit events, so turning the logger on is sufficient to ensure every hand is fully recorded.
-
-### EV Metrics & CLI Output
-
-`simulation.runner` streams per-hand summaries through an EV accumulator so you can monitor bankroll health for every seat. The CLI now prints combined output at the end of each run:
-
-```
-{
-  "stats": { ... },
-  "ev_metrics": { ... }
-}
-```
-
-`ev_metrics` reports per-seat chip deltas, EV per hand, bb/100, and rolling averages (200-hand window by default). Two optional flags help with large batches:
-
-* `--metrics-interval 1000` — emit an intermediate metrics snapshot every N completed hands.
-* `--metrics-path logs/ev_metrics.json` — persist the final metrics JSON for dashboards or downstream tooling.
-
-These summaries are derived from the same showdown results captured by the logger, so no extra instrumentation is required.
-
-### Simulation Runner Configuration
-
-`simulation/runner.py` can be driven entirely from CLI flags or from a JSON config file. Config files let you describe tables (stacks, blind sizes, agent classes) and batch settings (hand count, concurrency, RNG seeding, checkpoint cadence).
-
-Example `config/small_batch.json`:
+### Config-driven runs
 
 ```json
 {
   "num_hands": 1000,
-  "concurrency": 4,
-  "seed": 1337,
-  "checkpoint_interval": 200,
-  "checkpoint_path": "checkpoints/stats.json",
+  "concurrency": 2,
+  "seed": 42,
+  "action_log": {
+    "mode": "jsonl",
+    "path": "logs/actions.jsonl"
+  },
   "tables": [
     {
       "stacks": [200, 200],
@@ -150,128 +136,60 @@ Example `config/small_batch.json`:
 }
 ```
 
-Run it with `python -m simulation.runner --config config/small_batch.json`. Override any field on the CLI (for example `--hands 100` or `--checkpoint-interval 25`). The harness returns aggregated stats (hands played, total pot, per-seat wins) and exposes a hook API so downstream loggers/metric collectors can subscribe to each completed hand.
-
-`auto_reload` lets you control whether stacks reset to their initial buy-ins after each hand (the default) or if chip counts should persist across hands for deeper bankroll tracking.
+Run it via `python -m simulation.runner --config config/small_batch.json`. CLI flags always override config fields. `auto_reload=false` lets you track bankroll across hands; otherwise stacks reset to their initial buy-ins.
 
 ---
 
-# 🚀 **Technical Roadmap**
+## 📝 Structured Action Logging
 
-This roadmap outlines the evolution of JanusMind from a simple hand simulator into a full poker AI research system.
+`logging.self_play_logger.SelfPlayLogger` captures every betting action with timestamp, seat, action, bet size, pot size, and board texture.
 
----
+| Mode     | Description                                  | CLI Example |
+| -------- | -------------------------------------------- | ----------- |
+| `stdout` | Print newline-separated JSON events.         | `--action-log-mode stdout` |
+| `jsonl`  | Append JSONL to a file (path required).      | `--action-log-mode jsonl --action-log-path logs/actions.jsonl` |
+| `parquet`| Stream Parquet rows (requires `pyarrow`).    | `--action-log-mode parquet --action-log-path logs/actions.parquet` |
 
-## **1. Core Poker Engine (Current Stage)**
-
-* Deck + card representation
-* Player state
-* Blinds and hand initialization
-* Betting rounds
-* Community card progression
-* Showdown + Treys integration
-* Side-pot handling
-* Plug-and-play agent architecture
+Turn logging on via CLI or by passing `action_logger=create_logger(...)` into `HoldemHand.play_hand` directly.
 
 ---
 
-## **2. Multi-Agent Self-Play System**
+## 📈 EV Metrics
 
-* Efficient simulation of thousands/millions of hands
-* Logging of all decisions, bets, and outcomes
-* Seat rotation + multi-seat support
-* EV and bb/100 computation
-* Opponent-pool simulations
+`metrics.ev.EVMetricsAccumulator` subscribes to hand summaries and emits per-seat chip delta, EV/hand, bb/100, and rolling averages (default 200-hand window). Use `--metrics-interval` to print snapshots mid-run and `--metrics-path` to persist the final JSON blob.
 
 ---
 
-## **3. Supervised Learning (Behavioral Cloning)**
+## ✅ Testing & Validation
 
-* Encode poker states → tensors
-* Small MLP or transformer policy network
-* Train on self-play logs
-* Output: action probabilities and value estimates
-* Produce initial model: `policy_net.pt`
+Before opening a PR, run:
 
----
+1. `python scratch.py` – deck sanity check.
+2. `python -m simulation.runner --hands 25 --seed 7 --verbose` – end-to-end harness smoke test.
+3. `python -m simulation.runner --hands 5 --action-log-mode jsonl --action-log-path /tmp/actions.jsonl` – if action logging changed.
+4. `python -m pytest` – run the automated test suite.
 
-## **4. CFR Module (Counterfactual Regret Minimization)**
-
-Implement CFR for simplified games:
-
-* Kuhn Poker
-* Leduc Hold’em
-* Optional: bigger abstractions of Hold’em
-
-Features:
-
-* Regret tables
-* Strategy averaging
-* Exploitability estimates
-
-This module provides a theoretically grounded baseline.
+Add targeted tests next to critical logic (betting, payouts, seating) and document any new CLI options in this README.
 
 ---
 
-## **5. Range Estimation Network**
+## 🧭 Design Goals
 
-A system that infers opponent hand distributions using:
-
-* actions across streets
-* board texture
-* pot geometry
-* stack sizes
-* position and past behavior
-
-Outputs a probability distribution covering all possible hole-card combinations.
+- Transparent, readable code with full type hints.
+- Deterministic RNG behavior (seed everything explicitly).
+- Clear separation between pure simulation logic and side effects (logging, metrics, IO).
+- Extensible enough for ML integrations yet lightweight enough for laptops.
 
 ---
 
-## **6. Reinforcement Learning via Self-Play**
+## 🚀 Roadmap Snapshot
 
-* PPO or NFSP-style reinforcement learning
-* Train models against:
-
-  * earlier snapshots
-  * rule-based agents
-  * population mixtures
-* Curriculum: heads-up → short-handed → 6-max → 9-max
-* Periodic checkpointing
+1. **Core engine (complete):** deck, blinds, betting rounds, side pots, Treys integration, pluggable agents.
+2. **Multi-agent self-play (current focus):** faster batching, structured logging, EV metrics, seat rotation across tables.
+3. **Upcoming:** supervised learning on logged hands, CFR experiments, range estimation, RL/NFSP training, multi-seat abstractions.
 
 ---
 
-## **7. Multi-Seat Architecture (2–9 Players)**
+## 📜 License
 
-* Seat-relative feature encoding
-* Masked embeddings for empty seats
-* Correct handling of asymmetric information
-* Multi-agent value bootstrapping
-* Robust training over variable player counts
-
----
-
-## **8. Advanced Capabilities (Optional)**
-
-* Endgame (turn/river) equilibrium solvers
-* Bet-size abstraction and action un-abstraction
-* Tournament-mode decision-making (ICM-aware)
-* Opponent profiling with long-term stats
-* GUI or CLI for humans to play against agents
-
----
-
-# 🧭 **Design Goals**
-
-* Transparent, readable code
-* Deterministic where appropriate
-* Easy to extend for research
-* Lightweight enough to run fully on a laptop
-* Modular architecture suitable for ML integration
-
----
-
-# 📜 **License**
-
-This project is licensed under the **Apache License 2.0**.
-See `LICENSE` for details.
-ust tell me.
+Apache License 2.0. See `LICENSE` for details.
