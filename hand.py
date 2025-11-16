@@ -1,6 +1,6 @@
 # hand.py
 from dataclasses import dataclass, field
-from typing import List, Callable
+from typing import List, Callable, Optional
 
 from deck import Deck
 from hand_evaluator import evaluate_hand
@@ -94,7 +94,14 @@ class HoldemHand:
             p.total_contributed += p.current_bet
             p.current_bet = 0
 
-    def run_betting_round(self, starting_player_index: int, agents: List, street_name: str):
+    def run_betting_round(
+        self,
+        starting_player_index: int,
+        agents: List,
+        street_name: str,
+        *,
+        action_logger=None,
+    ):
         """
         Level-1 simplified betting:
         - 1 bet allowed per street
@@ -123,6 +130,7 @@ class HoldemHand:
                 )
 
                 kind = action["type"]
+                bet_size = 0
 
                 # ---------------------------
                 # ACTIONS
@@ -134,12 +142,14 @@ class HoldemHand:
                     amount = min(player.stack, to_call)
                     player.stack -= amount
                     player.current_bet += amount
+                    bet_size = amount
 
                 elif kind == "bet":
                     size = min(action["amount"], player.stack)
                     player.stack -= size
                     player.current_bet += size
                     current_bet = player.current_bet
+                    bet_size = size
 
                 elif kind == "raise":
                     size = action["amount"]
@@ -149,6 +159,18 @@ class HoldemHand:
                     player.stack -= diff
                     player.current_bet += diff
                     current_bet = player.current_bet
+                    bet_size = diff
+
+                if action_logger is not None:
+                    total_pot = self.pot + sum(p.current_bet for p in self.players)
+                    board_state = [str(card) for card in self.board]
+                    action_logger.log_action(
+                        seat=player.seat,
+                        action=kind,
+                        bet_size=bet_size,
+                        pot=total_pot,
+                        board=board_state,
+                    )
 
             acted[idx] = True
             idx = (idx + 1) % num_players
@@ -219,25 +241,33 @@ class HoldemHand:
     # Full Hand Execution
     # ----------------------------------------------------------------------
 
-    def play_hand(self, agents, sb=5, bb=10):
+    def play_hand(
+        self,
+        agents,
+        sb=5,
+        bb=10,
+        *,
+        hand_id: Optional[str] = None,
+        action_logger=None,
+    ):
         self.reset_for_new_deck()
 
         self.deal_hole_cards()
         self.post_blinds(sb, bb)
 
-        self.run_betting_round(2, agents, "preflop")
+        self.run_betting_round(2, agents, "preflop", action_logger=action_logger)
 
         if len(self.living_players()) > 1:
             self.deal_flop()
-            self.run_betting_round(0, agents, "flop")
+            self.run_betting_round(0, agents, "flop", action_logger=action_logger)
 
         if len(self.living_players()) > 1:
             self.deal_turn()
-            self.run_betting_round(0, agents, "turn")
+            self.run_betting_round(0, agents, "turn", action_logger=action_logger)
 
         if len(self.living_players()) > 1:
             self.deal_river()
-            self.run_betting_round(0, agents, "river")
+            self.run_betting_round(0, agents, "river", action_logger=action_logger)
 
         self.build_side_pots()
         result = self.showdown()
