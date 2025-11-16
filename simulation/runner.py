@@ -6,6 +6,7 @@ import json
 import importlib
 import importlib.util
 import random
+import sys
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -20,6 +21,7 @@ _SELF_PLAY_LOGGER_SPEC = importlib.util.spec_from_file_location(
 if _SELF_PLAY_LOGGER_SPEC is None or _SELF_PLAY_LOGGER_SPEC.loader is None:
     raise ImportError("Unable to load self_play_logger module")
 _SELF_PLAY_LOGGER = importlib.util.module_from_spec(_SELF_PLAY_LOGGER_SPEC)
+sys.modules[_SELF_PLAY_LOGGER_SPEC.name] = _SELF_PLAY_LOGGER
 _SELF_PLAY_LOGGER_SPEC.loader.exec_module(_SELF_PLAY_LOGGER)
 SelfPlayLogger = _SELF_PLAY_LOGGER.SelfPlayLogger
 create_logger = _SELF_PLAY_LOGGER.create_logger

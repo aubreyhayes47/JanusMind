@@ -73,6 +73,37 @@ print("Showdown:", result["result"])
 * `python -m simulation.runner --hands 25 --seed 7 --verbose` — run the new multi-hand harness.
 * Create new experiment scripts to test agent behavior, betting logic, or entire hand flows.
 
+### Structured Action Logging
+
+Every betting decision can be streamed through the new `SelfPlayLogger`, enabling you to capture a complete record of all hands. The logger records timestamped entries with the acting seat, bet size, pot size, and board texture at the moment of the decision.
+
+There are three append-only backends:
+
+| Mode    | Description                                  | CLI usage example |
+| ------- | --------------------------------------------- | ----------------- |
+| `stdout` | Prints JSON to the console for quick debugging. | `--action-log-mode stdout` |
+| `jsonl` | Appends newline-delimited JSON to a file.        | `--action-log-mode jsonl --action-log-path logs/actions.jsonl` |
+| `parquet` | Streams Parquet rows (requires `pyarrow`).     | `--action-log-mode parquet --action-log-path logs/actions.parquet` |
+
+To log every simulated hand, pass the desired mode (and path for file-backed modes) when invoking the runner:
+
+```bash
+python -m simulation.runner --hands 1000 --action-log-mode jsonl --action-log-path logs/actions.jsonl
+```
+
+The same options are available via config files under the `action_log` key:
+
+```json
+{
+  "action_log": {
+    "mode": "jsonl",
+    "path": "logs/actions.jsonl"
+  }
+}
+```
+
+All agents automatically emit events, so turning the logger on is sufficient to ensure every hand is fully recorded.
+
 ### Simulation Runner Configuration
 
 `simulation/runner.py` can be driven entirely from CLI flags or from a JSON config file. Config files let you describe tables (stacks, blind sizes, agent classes) and batch settings (hand count, concurrency, RNG seeding, checkpoint cadence).
