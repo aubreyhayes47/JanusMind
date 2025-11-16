@@ -70,7 +70,37 @@ print("Showdown:", result["result"])
 # 🧪 **Testing Utilities**
 
 * `python scratch.py` — tests basic deck behavior.
+* `python -m simulation.runner --hands 25 --seed 7 --verbose` — run the new multi-hand harness.
 * Create new experiment scripts to test agent behavior, betting logic, or entire hand flows.
+
+### Simulation Runner Configuration
+
+`simulation/runner.py` can be driven entirely from CLI flags or from a JSON config file. Config files let you describe tables (stacks, blind sizes, agent classes) and batch settings (hand count, concurrency, RNG seeding, checkpoint cadence).
+
+Example `config/small_batch.json`:
+
+```json
+{
+  "num_hands": 1000,
+  "concurrency": 4,
+  "seed": 1337,
+  "checkpoint_interval": 200,
+  "checkpoint_path": "checkpoints/stats.json",
+  "tables": [
+    {
+      "stacks": [200, 200],
+      "sb": 1,
+      "bb": 2,
+      "agents": [
+        "agents.tag_agent.TAGAgent",
+        "agents.random_agent.RandomAgent"
+      ]
+    }
+  ]
+}
+```
+
+Run it with `python -m simulation.runner --config config/small_batch.json`. Override any field on the CLI (for example `--hands 100` or `--checkpoint-interval 25`). The harness returns aggregated stats (hands played, total pot, per-seat wins) and exposes a hook API so downstream loggers/metric collectors can subscribe to each completed hand.
 
 ---
 
