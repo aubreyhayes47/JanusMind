@@ -70,7 +70,7 @@ print("Showdown:", result["result"])
 # 🧪 **Testing Utilities**
 
 * `python scratch.py` — tests basic deck behavior.
-* `python -m simulation.runner --hands 25 --seed 7 --verbose` — run the new multi-hand harness.
+* `python -m simulation.runner --hands 25 --seed 7 --verbose` — run the new multi-hand harness and print EV metrics/stats.
 * Create new experiment scripts to test agent behavior, betting logic, or entire hand flows.
 
 ### Structured Action Logging
@@ -103,6 +103,24 @@ The same options are available via config files under the `action_log` key:
 ```
 
 All agents automatically emit events, so turning the logger on is sufficient to ensure every hand is fully recorded.
+
+### EV Metrics & CLI Output
+
+`simulation.runner` streams per-hand summaries through an EV accumulator so you can monitor bankroll health for every seat. The CLI now prints combined output at the end of each run:
+
+```
+{
+  "stats": { ... },
+  "ev_metrics": { ... }
+}
+```
+
+`ev_metrics` reports per-seat chip deltas, EV per hand, bb/100, and rolling averages (200-hand window by default). Two optional flags help with large batches:
+
+* `--metrics-interval 1000` — emit an intermediate metrics snapshot every N completed hands.
+* `--metrics-path logs/ev_metrics.json` — persist the final metrics JSON for dashboards or downstream tooling.
+
+These summaries are derived from the same showdown results captured by the logger, so no extra instrumentation is required.
 
 ### Simulation Runner Configuration
 
