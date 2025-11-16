@@ -22,12 +22,20 @@ class SeatAssignment:
 class SeatManager:
     """Manage seat order, blind posting, and stack persistence across hands."""
 
-    def __init__(self, stacks: Sequence[int], agent_paths: Sequence[str]):
+    def __init__(
+        self,
+        stacks: Sequence[int],
+        agent_paths: Sequence[str],
+        *,
+        auto_reload: bool = True,
+    ):
         if not 2 <= len(stacks) <= 9:
             raise ValueError("Texas Hold'em tables must have between 2 and 9 seats")
         if len(stacks) != len(agent_paths):
             raise ValueError("Stacks and agent specs must be the same length")
 
+        self._initial_stacks: List[int] = list(stacks)
+        self._auto_reload = auto_reload
         self._players: List[PlayerState] = [
             PlayerState(seat=i, stack=stack) for i, stack in enumerate(stacks)
         ]
@@ -92,5 +100,11 @@ class SeatManager:
         if set(latest.keys()) != set(range(len(self._players))):
             raise ValueError("Updated players must cover every seat exactly once")
 
-        self._players = [latest[idx] for idx in range(len(self._players))]
+        if self._auto_reload:
+            self._players = [
+                PlayerState(seat=seat, stack=self._initial_stacks[seat])
+                for seat in range(len(self._players))
+            ]
+        else:
+            self._players = [latest[idx] for idx in range(len(self._players))]
         self._button_position = (self._button_position + 1) % len(self._players)
