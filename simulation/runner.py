@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 from hand import HoldemHand, PlayerState
+from metrics.ev import EVMetricsAccumulator
 from simulation.seating import SeatManager
 
 _SELF_PLAY_LOGGER_PATH = Path(__file__).resolve().parent.parent / "logging" / "self_play_logger.py"
@@ -208,6 +209,8 @@ def _run_single_hand(task: HandTask) -> Dict:
         "task_id": task.task_id,
         "hand_number": task.hand_number,
         "table_index": task.table_index,
+        "sb": task.table_config.sb,
+        "bb": task.table_config.bb,
         "result": result,
         "total_pot": total_pot,
         "winners": winners,
@@ -328,6 +331,18 @@ def _parse_args() -> argparse.Namespace:
         help="Destination file for JSONL or Parquet logs",
         default=None,
     )
+    parser.add_argument(
+        "--metrics-path",
+        type=Path,
+        help="Optional path to write EV/BB metrics as JSON",
+        default=None,
+    )
+    parser.add_argument(
+        "--metrics-interval",
+        type=int,
+        help="Hands between interim EV metric dumps",
+        default=None,
+    )
     return parser.parse_args()
 
 
@@ -369,6 +384,16 @@ def main() -> None:
     config = _build_simulation_config(args)
     runner = SimulationRunner(config)
 
+    metrics = EVMetricsAccumulator()
+
+    def _collect_metrics(summary: Dict) -> None:
+        metrics.record_hand(summary)
+        if args.metrics_interval and metrics.total_events % args.metrics_interval == 0:
+            snapshot = {"ev_metrics": metrics.as_dict()}
+            print(json.dumps(snapshot, indent=2))
+
+    runner.subscribe(_collect_metrics)
+
     if args.verbose:
         runner.subscribe(
             lambda summary: print(
@@ -377,7 +402,16 @@ def main() -> None:
         )
 
     stats = runner.run()
-    print(json.dumps(stats.as_dict(), indent=2))
+    result = {
+        "stats": stats.as_dict(),
+        "ev_metrics": metrics.as_dict(),
+    }
+    print(json.dumps(result, indent=2))
+
+    if args.metrics_path:
+        metrics_path = args.metrics_path.expanduser()
+        metrics_path.parent.mkdir(parents=True, exist_ok=True)
+        metrics_path.write_text(json.dumps(metrics.as_dict(), indent=2))
 
 
 if __name__ == "__main__":
