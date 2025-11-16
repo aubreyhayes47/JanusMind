@@ -192,6 +192,7 @@ class SimulationRunner:
         checkpoint_path = self.config.checkpoint_path or Path("simulation_checkpoint.json")
         data = {"stats": self.stats.as_dict()}
         checkpoint_path = Path(checkpoint_path)
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
         checkpoint_path.write_text(json.dumps(data, indent=2))
 
     def run(self) -> SimulationStats:
