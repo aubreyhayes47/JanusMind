@@ -4,6 +4,7 @@ from typing import List, Callable, Optional
 
 from deck import Deck
 from hand_evaluator import evaluate_hand
+from payouts import split_pot_evenly
 
 
 @dataclass
@@ -229,9 +230,9 @@ class HoldemHand:
 
             winners = [p for score, p in scores if score == best]
 
-            share = pot_amount // len(winners)
+            payouts = split_pot_evenly(pot_amount, [w.seat for w in winners])
             for w in winners:
-                w.stack += share
+                w.stack += payouts[w.seat]
 
             results.append((pot_amount, winners))
 
