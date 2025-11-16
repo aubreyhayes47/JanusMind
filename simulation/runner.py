@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import importlib
+import importlib.util
 import random
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
@@ -11,6 +12,17 @@ from pathlib import Path
 from typing import Callable, Dict, Iterator, List, Optional
 
 from hand import HoldemHand, PlayerState
+
+_SELF_PLAY_LOGGER_PATH = Path(__file__).resolve().parent.parent / "logging" / "self_play_logger.py"
+_SELF_PLAY_LOGGER_SPEC = importlib.util.spec_from_file_location(
+    "janus_logging.self_play_logger", _SELF_PLAY_LOGGER_PATH
+)
+if _SELF_PLAY_LOGGER_SPEC is None or _SELF_PLAY_LOGGER_SPEC.loader is None:
+    raise ImportError("Unable to load self_play_logger module")
+_SELF_PLAY_LOGGER = importlib.util.module_from_spec(_SELF_PLAY_LOGGER_SPEC)
+_SELF_PLAY_LOGGER_SPEC.loader.exec_module(_SELF_PLAY_LOGGER)
+SelfPlayLogger = _SELF_PLAY_LOGGER.SelfPlayLogger
+create_logger = _SELF_PLAY_LOGGER.create_logger
 
 
 # ---------------------------------------------------------------------------
@@ -56,6 +68,8 @@ class SimulationConfig:
     checkpoint_interval: Optional[int] = None
     checkpoint_path: Optional[Path] = None
     tables: List[TableConfig] = field(default_factory=list)
+    action_log_mode: Optional[str] = None
+    action_log_path: Optional[Path] = None
 
     def ensure_tables(self) -> None:
         if not self.tables:
@@ -79,6 +93,8 @@ class HandTask:
     table_index: int
     table_config: TableConfig
     seed: Optional[int]
+    action_log_mode: Optional[str]
+    action_log_path: Optional[Path]
 
 
 # ---------------------------------------------------------------------------
@@ -133,7 +149,28 @@ def _run_single_hand(task: HandTask) -> Dict:
     agents = [_load_agent(spec) for spec in task.table_config.agents]
 
     hand = HoldemHand(players)
-    result = hand.play_hand(agents, sb=task.table_config.sb, bb=task.table_config.bb)
+    logger: Optional[SelfPlayLogger] = None
+    if task.action_log_mode:
+        destination = task.action_log_path
+        if destination:
+            destination = destination.expanduser()
+        logger = create_logger(
+            task.action_log_mode,
+            destination=destination,
+            hand_id=str(task.task_id),
+        )
+
+    try:
+        result = hand.play_hand(
+            agents,
+            sb=task.table_config.sb,
+            bb=task.table_config.bb,
+            hand_id=str(task.task_id),
+            action_logger=logger,
+        )
+    finally:
+        if logger is not None:
+            logger.close()
 
     total_pot = sum(pot for pot, _ in result.get("side_pots", []))
     if not total_pot:
@@ -176,6 +213,8 @@ class SimulationRunner:
                     table_index=table_index,
                     table_config=table,
                     seed=seed,
+                    action_log_mode=self.config.action_log_mode,
+                    action_log_path=self.config.action_log_path,
                 )
 
     def _handle_summary(self, summary: Dict) -> None:
@@ -223,6 +262,18 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint-interval", type=int, help="Hands between checkpoints", default=None)
     parser.add_argument("--checkpoint-path", type=Path, help="Where to write checkpoint stats", default=None)
     parser.add_argument("--verbose", action="store_true", help="Stream per-hand results")
+    parser.add_argument(
+        "--action-log-mode",
+        choices=["stdout", "jsonl", "parquet"],
+        help="Where to stream structured action logs",
+        default=None,
+    )
+    parser.add_argument(
+        "--action-log-path",
+        type=Path,
+        help="Destination file for JSONL or Parquet logs",
+        default=None,
+    )
     return parser.parse_args()
 
 
@@ -240,6 +291,9 @@ def _build_simulation_config(args: argparse.Namespace) -> SimulationConfig:
     seed = args.seed if args.seed is not None else config_data.get("seed")
     checkpoint_interval = args.checkpoint_interval or config_data.get("checkpoint_interval")
     checkpoint_path = args.checkpoint_path or config_data.get("checkpoint_path")
+    action_log_config = config_data.get("action_log", {})
+    action_log_mode = args.action_log_mode or action_log_config.get("mode")
+    action_log_path_value = args.action_log_path or action_log_config.get("path")
 
     tables_data = config_data.get("tables", [])
     tables = [TableConfig.from_dict(entry) for entry in tables_data]
@@ -251,6 +305,8 @@ def _build_simulation_config(args: argparse.Namespace) -> SimulationConfig:
         checkpoint_interval=checkpoint_interval,
         checkpoint_path=Path(checkpoint_path) if checkpoint_path else None,
         tables=tables,
+        action_log_mode=action_log_mode,
+        action_log_path=Path(action_log_path_value) if action_log_path_value else None,
     )
 
 
