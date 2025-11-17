@@ -55,6 +55,7 @@ When you add new agents, export them in `agents/__init__.py` so dotted-path impo
 - [`treys`](https://pypi.org/project/treys/) (required)
 - [`pyarrow`](https://pypi.org/project/pyarrow/) (optional, Parquet logging)
 - [`numpy`](https://pypi.org/project/numpy/) (required for dataset encoding utilities)
+- [`torch`](https://pytorch.org/) (optional, required for `training/train_mlp.py`)
 
 ```bash
 pip install treys           # base dependency
@@ -182,6 +183,26 @@ Outputs:
 - `data/encoded/metadata.json` – normalization and encoding metadata.
 
 See `docs/feature_schema.md` for the exact tensor layout and inference-time expectations.
+
+---
+
+## 🧠 Supervised MLP Policy Training
+
+Train a compact policy/value head on the encoded tensors using PyTorch. The trainer optimizes cross-entropy for the action type
+and mean squared error for bet/raise sizes (masked to bet/raise rows) while tracking validation accuracy and an EV-style proxy
+based on negative total loss. Artifacts include the model weights and the normalization parameters applied to numeric inputs.
+
+```bash
+python training/train_mlp.py \
+  data/encoded \
+  models/mlp_policy \
+  --epochs 15 \
+  --batch-size 256 \
+  --learning-rate 5e-4
+```
+
+`models/mlp_policy` will contain `mlp_policy.pt` plus `normalization.json` describing the feature order, numeric means/stds, the
+action ordering, and the best validation metrics observed during training.
 
 ---
 
