@@ -7,7 +7,7 @@ import random
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Sequence, Tuple
+from typing import Any, Dict, Iterable, Iterator, List, Sequence, Tuple
 
 import numpy as np
 
@@ -112,20 +112,26 @@ def normalize_amount(amount: Any, *, big_blind: float) -> float:
 def load_events(path: Path) -> List[Dict[str, Any]]:
     suffix = path.suffix.lower()
     if suffix == ".jsonl":
-        return _load_jsonl(path)
+        return list(_iter_jsonl(path))
     if suffix == ".parquet":
         return _load_parquet(path)
     raise ValueError(f"Unsupported log format for {path}")
 
 
-def _load_jsonl(path: Path) -> List[Dict[str, Any]]:
-    events: List[Dict[str, Any]] = []
+def _iter_jsonl(path: Path) -> Iterator[Dict[str, Any]]:
     with path.open("r", encoding="utf-8") as handle:
         for line in handle:
             if not line.strip():
                 continue
-            events.append(json.loads(line))
-    return events
+            yield json.loads(line)
+
+
+def _count_action_events_jsonl(path: Path) -> int:
+    count = 0
+    for event in _iter_jsonl(path):
+        if event.get("event") == "action":
+            count += 1
+    return count
 
 
 def _load_parquet(path: Path) -> List[Dict[str, Any]]:
@@ -179,6 +185,48 @@ def encode_events(events: Iterable[Dict[str, Any]], *, big_blind: float) -> Enco
     )
 
 
+def encode_jsonl(path: Path, *, big_blind: float) -> EncodedDataset:
+    total_rows = _count_action_events_jsonl(path)
+    if total_rows == 0:
+        raise ValueError("No action events found in provided logs")
+
+    hole_cards = np.zeros((total_rows, NUM_CARDS), dtype=np.float32)
+    board_cards = np.zeros((total_rows, NUM_CARDS), dtype=np.float32)
+    stacks = np.zeros((total_rows, 1), dtype=np.float32)
+    pots = np.zeros((total_rows, 1), dtype=np.float32)
+    to_calls = np.zeros((total_rows, 1), dtype=np.float32)
+    action_types = np.zeros((total_rows, len(ACTION_TYPES)), dtype=np.float32)
+    bet_targets = np.zeros((total_rows, 1), dtype=np.float32)
+
+    row = 0
+    for event in _iter_jsonl(path):
+        if event.get("event") != "action":
+            continue
+        action = str(event.get("action", "")).lower()
+        hole_cards[row] = encode_cards(event.get("hole_cards", []) or [])
+        board_cards[row] = encode_cards(event.get("board", []) or [])
+        stacks[row, 0] = normalize_amount(event.get("stack"), big_blind=big_blind)
+        pots[row, 0] = normalize_amount(event.get("pot"), big_blind=big_blind)
+        to_calls[row, 0] = normalize_amount(event.get("to_call"), big_blind=big_blind)
+        action_types[row] = one_hot_action(action)
+
+        bet_size = normalize_amount(event.get("bet_size"), big_blind=big_blind)
+        if action not in {"bet", "raise"}:
+            bet_size = 0.0
+        bet_targets[row, 0] = bet_size
+        row += 1
+
+    return EncodedDataset(
+        hole_cards=hole_cards,
+        board_cards=board_cards,
+        stacks=stacks,
+        pots=pots,
+        to_calls=to_calls,
+        action_types=action_types,
+        bet_targets=bet_targets,
+    )
+
+
 def persist_metadata(path: Path, *, big_blind: float, val_fraction: float, total_rows: int) -> None:
     metadata = {
         "big_blind": big_blind,
@@ -207,8 +255,11 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    events = load_events(args.log_path)
-    encoded = encode_events(events, big_blind=args.big_blind)
+    if args.log_path.suffix.lower() == ".jsonl":
+        encoded = encode_jsonl(args.log_path, big_blind=args.big_blind)
+    else:
+        events = load_events(args.log_path)
+        encoded = encode_events(events, big_blind=args.big_blind)
     train, val = encoded.split(val_fraction=args.val_fraction, seed=args.seed)
 
     train_path = args.output_dir / "train.npz"
