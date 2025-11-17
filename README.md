@@ -54,6 +54,7 @@ When you add new agents, export them in `agents/__init__.py` so dotted-path impo
 - Python 3.10+
 - [`treys`](https://pypi.org/project/treys/) (required)
 - [`pyarrow`](https://pypi.org/project/pyarrow/) (optional, Parquet logging)
+- [`numpy`](https://pypi.org/project/numpy/) (required for dataset encoding utilities)
 
 ```bash
 pip install treys           # base dependency
@@ -159,6 +160,28 @@ The table seats six deterministic experts (tight-aggressive, loose-aggressive, a
 | `parquet`| Stream Parquet rows (requires `pyarrow`).    | `--action-log-mode parquet --action-log-path logs/actions.parquet` |
 
 Turn logging on via CLI or by passing `action_logger=create_logger(...)` into `HoldemHand.play_hand` directly.
+
+---
+
+## 🧱 Dataset Preparation for Agents
+
+The `training/prepare_dataset.py` utility converts action logs into model-ready tensors for supervised learning or imitation experiments. It performs card encoding, normalizes numeric chip amounts by the provided big blind, one-hot encodes action labels, and writes aligned train/validation splits.
+
+```bash
+python training/prepare_dataset.py \
+  logs/actions.jsonl \
+  data/encoded \
+  --big-blind 50 \
+  --val-fraction 0.1 \
+  --seed 42
+```
+
+Outputs:
+
+- `data/encoded/train.npz` and `data/encoded/val.npz` – packed arrays for model ingestion.
+- `data/encoded/metadata.json` – normalization and encoding metadata.
+
+See `docs/feature_schema.md` for the exact tensor layout and inference-time expectations.
 
 ---
 
