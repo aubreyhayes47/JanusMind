@@ -26,6 +26,10 @@ class ActionEvent:
     bet_size: int
     pot: int
     board: List[str]
+    hole_cards: Optional[List[str]] = None
+    stack: Optional[int] = None
+    to_call: Optional[int] = None
+    street: Optional[str] = None
 
     def as_dict(self) -> Dict:
         return {
@@ -36,6 +40,10 @@ class ActionEvent:
             "bet_size": self.bet_size,
             "pot": self.pot,
             "board": self.board,
+            "hole_cards": self.hole_cards,
+            "stack": self.stack,
+            "to_call": self.to_call,
+            "street": self.street,
         }
 
 
@@ -103,6 +111,10 @@ class SelfPlayLogger:
         bet_size: int,
         pot: int,
         board: List[str],
+        hole_cards: Optional[List[str]] = None,
+        stack: Optional[int] = None,
+        to_call: Optional[int] = None,
+        street: Optional[str] = None,
     ) -> None:
         event = ActionEvent(
             timestamp=datetime.now(timezone.utc).isoformat(),
@@ -112,6 +124,10 @@ class SelfPlayLogger:
             bet_size=bet_size,
             pot=pot,
             board=board,
+            hole_cards=hole_cards,
+            stack=stack,
+            to_call=to_call,
+            street=street,
         )
         self._writer.append(event)
 

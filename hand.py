@@ -165,12 +165,17 @@ class HoldemHand:
                 if action_logger is not None:
                     total_pot = self.pot + sum(p.current_bet for p in self.players)
                     board_state = [str(card) for card in self.board]
+                    hole_cards = [str(card) for card in player.hole_cards]
                     action_logger.log_action(
                         seat=player.seat,
                         action=kind,
                         bet_size=bet_size,
                         pot=total_pot,
                         board=board_state,
+                        hole_cards=hole_cards,
+                        stack=player.stack,
+                        to_call=to_call,
+                        street=street_name,
                     )
 
             acted[idx] = True
