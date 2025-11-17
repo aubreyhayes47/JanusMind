@@ -166,6 +166,7 @@ class HoldemHand:
                     total_pot = self.pot + sum(p.current_bet for p in self.players)
                     board_state = [str(card) for card in self.board]
                     hole_cards = [str(card) for card in player.hole_cards]
+                    stacks = [p.stack for p in self.players]
                     action_logger.log_action(
                         seat=player.seat,
                         action=kind,
@@ -176,6 +177,7 @@ class HoldemHand:
                         stack=player.stack,
                         to_call=to_call,
                         street=street_name,
+                        stacks=stacks,
                     )
 
             acted[idx] = True
@@ -277,6 +279,14 @@ class HoldemHand:
 
         self.build_side_pots()
         result = self.showdown()
+
+        if action_logger is not None:
+            action_logger.log_showdown(
+                board=[str(card) for card in self.board],
+                players=self.players,
+                side_pots=self.side_pots,
+                showdown_results=result,
+            )
 
         return {
             "board": self.board,

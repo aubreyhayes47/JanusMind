@@ -150,7 +150,7 @@ The table seats six deterministic experts (tight-aggressive, loose-aggressive, a
 
 ## 📝 Structured Action Logging
 
-`logging.self_play_logger.SelfPlayLogger` captures every betting action with timestamp, seat, action, bet size, pot size, and board texture.
+`logging.self_play_logger.SelfPlayLogger` captures every betting action with timestamp, seat, action, bet size, pot size, board texture, the actor's hole cards, and a snapshot of all stack sizes. A dedicated `showdown` event is emitted at the end of each hand that records the final board, every player's hole cards/stack/total contribution, side pots, and the winning seats for each pot.
 
 | Mode     | Description                                  | CLI Example |
 | -------- | -------------------------------------------- | ----------- |
