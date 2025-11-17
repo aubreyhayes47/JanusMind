@@ -138,6 +138,14 @@ Flags:
 
 Run it via `python -m simulation.runner --config config/small_batch.json`. CLI flags always override config fields. `auto_reload=false` lets you track bankroll across hands; otherwise stacks reset to their initial buy-ins.
 
+For reproducible benchmarks with no agent randomness, a deterministic expert ring is available in `config/deterministic_experts.json`:
+
+```bash
+python -m simulation.runner --config config/deterministic_experts.json --hands 250 --seed 99
+```
+
+The table seats six deterministic experts (tight-aggressive, loose-aggressive, and short-stack specialists) so every position is filled without stochastic policies.
+
 ---
 
 ## 📝 Structured Action Logging
