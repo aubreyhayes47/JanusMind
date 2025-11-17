@@ -1,0 +1,21 @@
+{
+  "num_hands": 100,
+  "concurrency": 1,
+  "seed": 123,
+  "tables": [
+    {
+      "stacks": [200, 200, 200, 200, 200, 200],
+      "sb": 5,
+      "bb": 10,
+      "auto_reload": true,
+      "agents": [
+        "agents.deterministic_agents.ConservativeTAGAgent",
+        "agents.deterministic_agents.DeterministicLAGAgent",
+        "agents.deterministic_agents.ShortStackSurvivalAgent",
+        "agents.deterministic_agents.ConservativeTAGAgent",
+        "agents.deterministic_agents.DeterministicLAGAgent",
+        "agents.deterministic_agents.ShortStackSurvivalAgent"
+      ]
+    }
+  ]
+}
